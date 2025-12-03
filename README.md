@@ -1,0 +1,55 @@
+## HTTP Monitor with Feishu Alert
+
+使用 Go 编写的简单 HTTP 监控工具，定时检查多个 URL，当返回错误或超时时，通过飞书机器人 Webhook 发送消息卡片进行告警，并暴露 Prometheus `/metrics` 指标。
+
+### 配置优先级
+
+- **优先使用配置文件**：`config.yaml`（可参考 `config.yaml.example`）
+- 如果同目录下没有 `config.yaml`，则回退到 **环境变量** 配置
+
+### 配置文件方式（推荐）
+
+在项目根目录复制一份示例文件：
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+根据实际情况修改：
+
+- **monitor.urls**: 需要监控的 URL 列表
+- **monitor.interval_seconds**: 轮询间隔秒数，默认 `10`
+- **monitor.timeout_seconds**: 单次请求超时时间秒数，默认 `5`
+- **feishu.webhook**: 飞书群机器人的 Webhook 地址
+- **log.file**: 日志文件路径（默认 `monitor.log`）
+
+### 环境变量方式（无 config.yaml 时）
+
+- **MONITOR_URLS**: 需要监控的 URL，多个用逗号分隔，例如：`https://example.com,https://api.example.com/health`
+- **FEISHU_WEBHOOK**: 飞书群机器人的 Webhook 地址
+- **INTERVAL_SECONDS**: 轮询间隔秒数，默认 `10`
+- **LOG_FILE**: 日志文件路径，默认 `monitor.log`
+
+### 运行
+
+```bash
+cd /home/maolin/workspace/http-monitor
+
+# 如果使用 config.yaml，直接运行即可
+go run .
+
+# 如果使用环境变量方式：
+# export MONITOR_URLS="https://example.com,https://api.example.com/health"
+# export FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/xxxxxx"
+# export INTERVAL_SECONDS=10
+# export LOG_FILE="monitor.log"
+# go run .
+```
+
+程序会每 INTERVAL_SECONDS 秒检查一次所有 URL：
+
+- 当检测到错误或非 2xx 状态码时，发送一张「HTTP 监控告警」交互卡片到对应飞书群，并记录到日志。
+- 在本地 `:2112/metrics` 暴露 Prometheus 指标（如 `http_monitor_requests_total`、`http_monitor_request_duration_seconds`）。
+
+
+

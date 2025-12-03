@@ -1,0 +1,14 @@
+monitor:
+  urls:
+    - "https://example.com"
+    - "https://api.example.com/health"
+  interval_seconds: 10      # 轮询间隔秒
+  timeout_seconds: 5        # 单次请求超时时间秒
+
+feishu:
+  webhook: "https://open.feishu.cn/open-apis/bot/v2/hook/your-webhook"
+
+log:
+  file: "monitor.log"
+
+
