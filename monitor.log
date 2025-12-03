@@ -1,0 +1,24 @@
+2025/12/03 17:35:23 main.go:268: monitor started with 2 urls, interval=10s, timeout=5s
+2025/12/03 17:35:23 main.go:258: metrics server listen on :2112
+2025/12/03 17:35:24 main.go:147: [OK] https://example.com - HTTP 200, 耗时 563.062391ms
+2025/12/03 17:35:24 main.go:139: [ERROR] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host
+2025/12/03 17:35:34 main.go:147: [OK] https://example.com - HTTP 200, 耗时 183.51832ms
+2025/12/03 17:35:34 main.go:139: [ERROR] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host
+2025/12/03 17:45:32 main.go:307: monitor started with 2 urls, interval=10s, timeout=5s, cooldown=0s, latency_threshold=0s
+2025/12/03 17:45:32 main.go:296: metrics server listen on :2112
+2025/12/03 17:45:32 main.go:196: [OK] https://example.com - HTTP 200, 耗时 641.989781ms
+2025/12/03 17:45:32 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:45:42 main.go:196: [OK] https://example.com - HTTP 200, 耗时 201.600358ms
+2025/12/03 17:45:42 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:45:52 main.go:196: [OK] https://example.com - HTTP 200, 耗时 194.59866ms
+2025/12/03 17:45:52 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:46:02 main.go:196: [OK] https://example.com - HTTP 200, 耗时 212.267302ms
+2025/12/03 17:46:02 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:46:12 main.go:196: [OK] https://example.com - HTTP 200, 耗时 195.6591ms
+2025/12/03 17:46:12 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:46:22 main.go:196: [OK] https://example.com - HTTP 200, 耗时 192.62392ms
+2025/12/03 17:46:22 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:46:32 main.go:196: [OK] https://example.com - HTTP 200, 耗时 197.831211ms
+2025/12/03 17:46:32 main.go:185: [ALERT] https://api.example.com/health - Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host (reason: Get "https://api.example.com/health": dial tcp: lookup api.example.com on 127.0.0.53:53: no such host)
+2025/12/03 17:46:36 main.go:427: 收到信号 interrupt，准备退出
+2025/12/03 17:46:36 main.go:322: monitor loop exiting

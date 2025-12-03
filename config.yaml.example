@@ -11,4 +11,8 @@ feishu:
 log:
   file: "monitor.log"
 
+alert:
+  cooldown_seconds: 60        # 告警最小间隔，0 表示不限制
+  latency_threshold_ms: 1000  # 超过该耗时判定为慢请求，0 表示关闭
+
 

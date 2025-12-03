@@ -3,6 +3,7 @@ module http-monitor
 go 1.22.2
 
 require (
+	github.com/kardianos/service v1.2.3
 	github.com/prometheus/client_golang v1.20.5
 	gopkg.in/yaml.v3 v3.0.1
 )

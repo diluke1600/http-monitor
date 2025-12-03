@@ -1,0 +1,19 @@
+# Binaries
+http-monitor
+http-monitor.exe
+*.exe
+*.dll
+*.out
+
+# Logs & config
+monitor.log
+*.log
+config.yaml
+
+# Misc
+*.tmp
+*.swp
+vendor/
+.DS_Store
+
+

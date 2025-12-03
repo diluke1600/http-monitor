@@ -22,6 +22,8 @@ cp config.yaml.example config.yaml
 - **monitor.timeout_seconds**: 单次请求超时时间秒数，默认 `5`
 - **feishu.webhook**: 飞书群机器人的 Webhook 地址
 - **log.file**: 日志文件路径（默认 `monitor.log`）
+- **alert.cooldown_seconds**: 告警最小间隔，防止频繁推送，默认 `60`
+- **alert.latency_threshold_ms**: 响应耗时超过该阈值视为慢请求并触发告警，默认 `0`（关闭）
 
 ### 环境变量方式（无 config.yaml 时）
 
@@ -29,6 +31,8 @@ cp config.yaml.example config.yaml
 - **FEISHU_WEBHOOK**: 飞书群机器人的 Webhook 地址
 - **INTERVAL_SECONDS**: 轮询间隔秒数，默认 `10`
 - **LOG_FILE**: 日志文件路径，默认 `monitor.log`
+- **ALERT_COOLDOWN_SECONDS**: 告警最小间隔，默认 `60`
+- **ALERT_LATENCY_THRESHOLD_MS**: 慢请求耗时阈值（毫秒），默认 `0`
 
 ### 运行
 
@@ -48,8 +52,31 @@ go run .
 
 程序会每 INTERVAL_SECONDS 秒检查一次所有 URL：
 
-- 当检测到错误或非 2xx 状态码时，发送一张「HTTP 监控告警」交互卡片到对应飞书群，并记录到日志。
+- 当检测到错误、非 2xx 状态码，或耗时超过 `alert.latency_threshold_ms` 时，会尝试发送「HTTP 监控告警」交互卡片，并记录到日志；同一 URL 会遵循 `cooldown` 限制，恢复到正常（包含耗时恢复）后自动重置，可再次即时告警。
 - 在本地 `:2112/metrics` 暴露 Prometheus 指标（如 `http_monitor_requests_total`、`http_monitor_request_duration_seconds`）。
+
+### Windows 服务部署
+
+已集成 [kardianos/service](https://github.com/kardianos/service)，可将程序打包并注册为 Windows 服务：
+
+```powershell
+cd C:\path\to\http-monitor
+set GOOS=windows
+set GOARCH=amd64
+go build -o http-monitor.exe
+
+# 安装服务（需管理员权限）
+http-monitor.exe -service install
+
+# 启动服务
+http-monitor.exe -service start
+
+# 停止/卸载
+http-monitor.exe -service stop
+http-monitor.exe -service uninstall
+```
+
+默认服务名称为 `HttpMonitor`。配置仍通过 `config.yaml`（放置在可执行文件同目录）或环境变量读取。若需以服务方式调试，可直接运行 `http-monitor.exe -service run`。
 
 
 

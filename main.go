@@ -2,11 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,6 +40,10 @@ type Config struct {
 	Log struct {
 		File string `yaml:"file"`
 	} `yaml:"log"`
+	Alert struct {
+		CooldownSeconds    int `yaml:"cooldown_seconds"`
+		LatencyThresholdMS int `yaml:"latency_threshold_ms"`
+	} `yaml:"alert"`
 }
 
 type FeishuCard struct {
@@ -60,6 +69,24 @@ var (
 	)
 )
 
+type AlertPolicy struct {
+	Cooldown         time.Duration
+	LatencyThreshold time.Duration
+}
+
+type MonitorRuntime struct {
+	URLs     []string
+	Webhook  string
+	Interval time.Duration
+	Timeout  time.Duration
+	Policy   AlertPolicy
+}
+
+var (
+	lastAlertMu sync.Mutex
+	lastAlert   = make(map[string]time.Time)
+)
+
 func init() {
 	prometheus.MustRegister(reqTotal, reqDuration)
 }
@@ -82,6 +109,12 @@ func loadConfig() (*Config, error) {
 	}
 	if cfg.Log.File == "" {
 		cfg.Log.File = "monitor.log"
+	}
+	if cfg.Alert.CooldownSeconds < 0 {
+		cfg.Alert.CooldownSeconds = 0
+	}
+	if cfg.Alert.LatencyThresholdMS < 0 {
+		cfg.Alert.LatencyThresholdMS = 0
 	}
 	return &cfg, nil
 }
@@ -106,7 +139,7 @@ func getEnv(key, def string) string {
 	return def
 }
 
-func monitorOnce(urls []string, timeout time.Duration, webhook string) {
+func monitorOnce(urls []string, timeout time.Duration, webhook string, policy AlertPolicy) {
 	client := &http.Client{
 		Timeout: timeout,
 	}
@@ -132,22 +165,65 @@ func monitorOnce(urls []string, timeout time.Duration, webhook string) {
 			}
 		}
 
+		alertNeeded := false
+		alertReason := detail
+
+		if policy.LatencyThreshold > 0 && status == "OK" && latency > policy.LatencyThreshold {
+			status = "SLOW"
+			alertNeeded = true
+			alertReason = fmt.Sprintf("响应耗时 %v 超过阈值 %v", latency, policy.LatencyThreshold)
+		}
+
 		reqTotal.WithLabelValues(u, status).Inc()
 		reqDuration.WithLabelValues(u).Observe(latency.Seconds())
 
 		if status == "ERROR" {
-			log.Printf("[ERROR] %s - %s\n", u, detail)
-			fmt.Printf("[ERROR] %s - %s\n", u, detail)
-			if webhook != "" {
-				if err := sendFeishuCard(webhook, u, status, detail, latency); err != nil {
+			alertNeeded = true
+		}
+
+		if alertNeeded {
+			log.Printf("[ALERT] %s - %s (reason: %s)\n", u, detail, alertReason)
+			fmt.Printf("[ALERT] %s - %s (reason: %s)\n", u, detail, alertReason)
+
+			if webhook != "" && canSendAlert(u, policy.Cooldown) {
+				if err := sendFeishuCard(webhook, u, status, alertReason, latency); err != nil {
 					log.Printf("发送飞书告警失败: %v\n", err)
+				} else {
+					recordAlert(u)
 				}
 			}
 		} else {
 			log.Printf("[OK] %s - %s\n", u, detail)
 			fmt.Printf("[OK] %s - %s\n", u, detail)
+			resetAlert(u)
 		}
 	}
+}
+
+func canSendAlert(url string, cooldown time.Duration) bool {
+	if cooldown <= 0 {
+		return true
+	}
+	lastAlertMu.Lock()
+	defer lastAlertMu.Unlock()
+
+	last, ok := lastAlert[url]
+	if !ok || last.IsZero() {
+		return true
+	}
+	return time.Since(last) >= cooldown
+}
+
+func recordAlert(url string) {
+	lastAlertMu.Lock()
+	defer lastAlertMu.Unlock()
+	lastAlert[url] = time.Now()
+}
+
+func resetAlert(url string) {
+	lastAlertMu.Lock()
+	defer lastAlertMu.Unlock()
+	delete(lastAlert, url)
 }
 
 func sendFeishuCard(webhook, url, status, detail string, latency time.Duration) error {
@@ -199,13 +275,67 @@ func sendFeishuCard(webhook, url, status, detail string, latency time.Duration) 
 	return nil
 }
 
+func startMetricsServer(ctx context.Context, addr string) {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{
+		Addr:    addr,
+		Handler: mux,
+	}
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("metrics server 关闭失败: %v\n", err)
+		}
+	}()
+
+	go func() {
+		log.Printf("metrics server listen on %s\n", addr)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Printf("metrics server 启动失败: %v\n", err)
+		}
+	}()
+}
+
+func runMonitorLoop(ctx context.Context, runtime MonitorRuntime) {
+	ticker := time.NewTicker(runtime.Interval)
+	defer ticker.Stop()
+
+	log.Printf("monitor started with %d urls, interval=%s, timeout=%s, cooldown=%s, latency_threshold=%s\n",
+		len(runtime.URLs), runtime.Interval, runtime.Timeout, runtime.Policy.Cooldown, runtime.Policy.LatencyThreshold)
+	fmt.Printf("开始监控 %d 个 URL，每 %s 检查一次\n", len(runtime.URLs), runtime.Interval)
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("monitor loop exiting")
+			return
+		default:
+			monitorOnce(runtime.URLs, runtime.Timeout, runtime.Webhook, runtime.Policy)
+		}
+
+		select {
+		case <-ctx.Done():
+			log.Println("monitor loop exiting")
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func main() {
+	flag.Parse()
+
 	// 优先尝试从 config.yaml 加载
 	cfg, err := loadConfig()
 	var urls []string
 	var webhook string
 	var intervalSec int
 	var timeout time.Duration
+	var policy AlertPolicy
 
 	if err == nil && cfg != nil {
 		urls = cfg.Monitor.URLs
@@ -213,6 +343,10 @@ func main() {
 		intervalSec = cfg.Monitor.Interval
 		timeout = time.Duration(cfg.Monitor.TimeoutSecond) * time.Second
 		setupLogger(cfg.Log.File)
+		policy = AlertPolicy{
+			Cooldown:         time.Duration(cfg.Alert.CooldownSeconds) * time.Second,
+			LatencyThreshold: time.Duration(cfg.Alert.LatencyThresholdMS) * time.Millisecond,
+		}
 		fmt.Println("已从 config.yaml 加载配置")
 	} else {
 		// 回退到环境变量
@@ -239,6 +373,22 @@ func main() {
 			}
 		}
 		timeout = 5 * time.Second
+		cooldownEnv := getEnv("ALERT_COOLDOWN_SECONDS", "60")
+		latencyEnv := getEnv("ALERT_LATENCY_THRESHOLD_MS", "0")
+		var cooldownSec int
+		var latencyMs int
+		fmt.Sscanf(cooldownEnv, "%d", &cooldownSec)
+		fmt.Sscanf(latencyEnv, "%d", &latencyMs)
+		if cooldownSec < 0 {
+			cooldownSec = 0
+		}
+		if latencyMs < 0 {
+			latencyMs = 0
+		}
+		policy = AlertPolicy{
+			Cooldown:         time.Duration(cooldownSec) * time.Second,
+			LatencyThreshold: time.Duration(latencyMs) * time.Millisecond,
+		}
 	}
 
 	if len(urls) == 0 {
@@ -250,25 +400,33 @@ func main() {
 		fmt.Println("警告：未配置 FEISHU_WEBHOOK，将不会发送飞书告警，只会在控制台/日志中打印")
 	}
 
-	// 启动 Prometheus /metrics 端点
-	http.Handle("/metrics", promhttp.Handler())
+	runtime := MonitorRuntime{
+		URLs:     urls,
+		Webhook:  webhook,
+		Interval: time.Duration(intervalSec) * time.Second,
+		Timeout:  timeout,
+		Policy:   policy,
+	}
+
+	run := func(ctx context.Context) {
+		startMetricsServer(ctx, ":2112")
+		runMonitorLoop(ctx, runtime)
+	}
+
+	if handleWindowsService(run) {
+		return
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		addr := ":2112"
-		fmt.Printf("Prometheus metrics 暴露在 %s/metrics\n", addr)
-		log.Printf("metrics server listen on %s\n", addr)
-		if err := http.ListenAndServe(addr, nil); err != nil {
-			log.Printf("metrics server 启动失败: %v\n", err)
-		}
+		s := <-sigCh
+		log.Printf("收到信号 %s，准备退出\n", s.String())
+		cancel()
 	}()
 
-	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
-	defer ticker.Stop()
-
-	fmt.Printf("开始监控 %d 个 URL，每 %d 秒检查一次\n", len(urls), intervalSec)
-	log.Printf("monitor started with %d urls, interval=%ds, timeout=%s\n", len(urls), intervalSec, timeout)
-
-	for {
-		monitorOnce(urls, timeout, webhook)
-		<-ticker.C
-	}
+	run(ctx)
 }
