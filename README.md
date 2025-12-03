@@ -78,5 +78,30 @@ http-monitor.exe -service uninstall
 
 默认服务名称为 `HttpMonitor`。配置仍通过 `config.yaml`（放置在可执行文件同目录）或环境变量读取。若需以服务方式调试，可直接运行 `http-monitor.exe -service run`。
 
+### 一键打包 Windows 服务（Linux 上执行）
+
+仓库中提供了 `build_windows_service.sh`，可以在 Linux 环境下直接交叉编译并打包成一个可拷贝的目录：
+
+```bash
+cd /home/maolin/workspace/http-monitor
+chmod +x build_windows_service.sh
+./build_windows_service.sh
+```
+
+脚本会：
+
+- 交叉编译生成 `http-monitor.exe`（`GOOS=windows GOARCH=amd64`）
+- 创建 `dist-windows/` 目录，并拷贝：
+  - `http-monitor.exe`
+  - `config.yaml`（如存在，否则用 `config.yaml.example` 复制一份）
+  - `README.md`
+
+然后你可以将整个 `dist-windows` 目录复制到 Windows 服务器，例如 `C:\http-monitor`，再在该目录下以管理员身份执行：
+
+```powershell
+http-monitor.exe -service install
+http-monitor.exe -service start
+```
+
 
 
